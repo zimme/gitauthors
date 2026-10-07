@@ -240,7 +240,7 @@ sh hooks/gitauthors.sh --validate-policy .gitauthors
 ## Agent-Specific Instructions
 
 ### For GitHub Actions
-- Use pinned Node.js version (24.21.0)
+- Use pinned Node.js version (24.13.1)
 - Install dependencies with `npm ci`
 - Run full test suite: `npm run check`
 

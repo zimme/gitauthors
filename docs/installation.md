@@ -48,7 +48,7 @@ sh install.sh --from-source
 
 ### 2. npm Package Integration
 
-**Requirements**: Node.js >= 24.21.0, npm >= 11.19.0
+**Requirements**: Node.js >= 24.13.1, npm >= 11.19.0
 
 #### Installation
 
