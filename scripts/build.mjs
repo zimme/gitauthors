@@ -190,7 +190,7 @@ function generatePackageJson(version) {
   "homepage": "https://github.com/zimme/gitauthors",
   "packageManager": "npm@11.19.0",
   "engines": {
-    "node": ">=24.13.1",
+    "node": ">=24",
     "npm": ">=11.19.0"
   },
   "dependencies": {},
