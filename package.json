@@ -1,0 +1,67 @@
+{
+  "name": "@zimme/gitauthors",
+  "version": "0.0.0-development",
+  "description": "Git author validation hook - mistake prevention for git commits",
+  "private": true,
+  "type": "module",
+  "main": "src/mod.mjs",
+  "exports": {
+    ".": {
+      "import": "./src/mod.mjs",
+      "default": "./src/mod.mjs"
+    },
+    "./src/mod.mjs": "./src/mod.mjs",
+    "./src/cli.mjs": "./src/cli.mjs"
+  },
+  "bin": {
+    "gitauthors": "./src/cli.mjs"
+  },
+  "scripts": {
+    "prepare": "node .husky/install.mjs",
+    "tools:setup": "sh scripts/setup-tools.sh",
+    "format": "node scripts/format.mjs --write",
+    "format:check": "node scripts/format.mjs --check",
+    "lint": "sh scripts/lint.sh",
+    "check:version": "node scripts/check-version.mjs",
+    "test:unit": "sh scripts/test.sh",
+    "test:integration": "sh scripts/test-integration.sh",
+    "test:packages": "node scripts/test-packages.mjs",
+    "test": "npm run test:unit && npm run test:integration",
+    "build": "node scripts/build.mjs",
+    "check": "npm run lint && npm run check:version && npm test && npm run build && npm run test:packages",
+    "release:prepare": "node scripts/prepare-release.mjs",
+    "release:resolve": "node scripts/resolve-release.mjs",
+    "release:publish": "node scripts/publish-release.mjs",
+    "pr:check": "node scripts/pr-checks.mjs"
+  },
+  "keywords": [
+    "git",
+    "hook",
+    "author",
+    "committer",
+    "validation",
+    "policy"
+  ],
+  "author": "Simon Fridlund <simon@fridlund.email>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zimme/gitauthors.git"
+  },
+  "bugs": {
+    "url": "https://github.com/zimme/gitauthors/issues"
+  },
+  "homepage": "https://github.com/zimme/gitauthors",
+  "packageManager": "npm@11.19.0",
+  "engines": {
+    "node": ">=24.21.0",
+    "npm": ">=11.19.0"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@commitlint/cli": "21.2.3",
+    "@commitlint/config-conventional": "21.2.3",
+    "husky": "9.1.7",
+    "prettier": "3.9.9"
+  }
+}
