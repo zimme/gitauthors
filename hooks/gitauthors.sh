@@ -53,27 +53,26 @@ export LC_ALL
 
 # Check if string contains non-ASCII characters (bytes > 127)
 contains_non_ascii() {
-  # Check for bytes > 127 using od
   if echo "$1" | od -An -tx1 | grep -q '[89abcdef][0-9a-f]'; then
-    return 0  # Contains non-ASCII
+    return 0
   fi
-  return 1  # ASCII only
+  return 1
 }
 
-# Check for NUL bytes in a string
+# Check for NUL bytes
 contains_nul() {
   if echo "$1" | od -An -tx1 | grep -q '00'; then
-    return 0  # Contains NUL
+    return 0
   fi
-  return 1  # Does not contain NUL
+  return 1
 }
 
-# Check for BOM in a string
+# Check for BOM
 contains_bom() {
   if echo "$1" | od -An -tx1 | grep -q 'efbbbf'; then
-    return 0  # Contains BOM
+    return 0
   fi
-  return 1  # Does not contain BOM
+  return 1
 }
 
 # Validate and parse policy file content
@@ -81,73 +80,54 @@ parse_policy() {
   local policy_file="$1"
   local line_num=0
   local has_effective_lines=false
-  local line
-  local trimmed_line
+  local line trimmed_line
 
-  # Check file exists and is readable
   if [ ! -f "$policy_file" ] || [ ! -r "$policy_file" ]; then
     ga_policy_missing "Policy file not found or not readable"
     return 2
   fi
 
-  # Check file size (max 65536 bytes)
   file_size=$(wc -c < "$policy_file" 2>/dev/null || echo 0)
   if [ "$file_size" -gt 65536 ]; then
     ga_policy_invalid "Policy file exceeds maximum size of 65536 bytes"
     return 2
   fi
 
-  # Read file line by line
   while IFS= read -r line || [ -n "$line" ]; do
     line_num=$((line_num + 1))
-    
-    # Remove trailing CR if present (handle CRLF)
     line=$(printf '%s\n' "$line" | tr -d '\r')
     
-    # Check for NUL bytes
     if contains_nul "$line"; then
       ga_policy_invalid "Policy contains NUL byte at line $line_num"
       return 2
     fi
     
-    # Check for BOM (should only be at start of file)
     if [ "$line_num" -eq 1 ] && contains_bom "$line"; then
       ga_policy_invalid "Policy contains BOM at line $line_num"
       return 2
     fi
     
-    # Check for non-ASCII characters
     if contains_non_ascii "$line"; then
       ga_policy_invalid "Policy contains non-ASCII characters at line $line_num"
       return 2
     fi
     
-    # Trim trailing whitespace (ASCII spaces/tabs only)
     trimmed_line=$(printf '%s\n' "$line" | sed 's/[[:space:]]*$//')
+    [ -z "$trimmed_line" ] && continue
     
-    # Skip empty lines
-    if [ -z "$trimmed_line" ]; then
-      continue
-    fi
-    
-    # Check for full-line comments (start with optional spaces and #)
     if echo "$trimmed_line" | grep -qE '^[[:space:]]*#'; then
       continue
     fi
     
-    # Check for inline comments (not allowed)
     if echo "$trimmed_line" | grep -q '#'; then
       ga_policy_invalid "Inline comments not allowed at line $line_num: $trimmed_line"
       return 2
     fi
     
-    # Now we have an effective line - it should be an email or domain
     has_effective_lines=true
     
-    # Check if it's a domain (@domain)
     case "$trimmed_line" in
       @[a-zA-Z0-9]*)
-        # Validate domain format
         domain=$(printf '%s\n' "$trimmed_line" | sed 's/^@//')
         if ! validate_domain "$domain"; then
           ga_policy_invalid "Invalid domain format at line $line_num: $trimmed_line"
@@ -157,7 +137,6 @@ parse_policy() {
         ;;
     esac
     
-    # Check if it's an email (local@domain)
     if echo "$trimmed_line" | grep -q '@'; then
       local_part=$(printf '%s\n' "$trimmed_line" | sed 's/@.*//')
       domain_part=$(printf '%s\n' "$trimmed_line" | sed 's/^[^@]*@//')
@@ -174,12 +153,10 @@ parse_policy() {
       continue
     fi
     
-    # If we get here, it's not a valid email or domain
     ga_policy_invalid "Invalid entry at line $line_num: $trimmed_line"
     return 2
   done < "$policy_file"
   
-  # Check if we have at least one effective line
   if [ "$has_effective_lines" = false ]; then
     ga_policy_invalid "Policy file contains no valid entries"
     return 2
@@ -188,56 +165,24 @@ parse_policy() {
   return 0
 }
 
-# Validate local part of email
 validate_local_part() {
   local local="$1"
-  
-  # Must be non-empty
-  if [ -z "$local" ]; then
-    return 1
-  fi
-  
-  # Check length (reasonable limit)
-  if [ ${#local} -gt 254 ]; then
-    return 1
-  fi
-  
-  # Must contain only allowed characters: ASCII letters/digits or _ . + - [ ]
-  if echo "$local" | grep -qE '[^a-zA-Z0-9_\.\+\-\[\]]'; then
-    return 1
-  fi
+  if [ -z "$local" ]; then return 1; fi
+  if [ ${#local} -gt 254 ]; then return 1; fi
+  if echo "$local" | grep -qE '[^a-zA-Z0-9_\.\+\-\[\]]'; then return 1; fi
   return 0
 }
 
-# Validate domain part
 validate_domain() {
   local domain="$1"
+  if [ -z "$domain" ]; then return 1; fi
+  if [ ${#domain} -gt 253 ]; then return 1; fi
   
-  # Must be non-empty
-  if [ -z "$domain" ]; then
-    return 1
-  fi
-  
-  # Check total length
-  if [ ${#domain} -gt 253 ]; then
-    return 1
-  fi
-  
-  # Check for empty labels (consecutive dots)
   case "$domain" in
-    *..*)
-      return 1
-      ;;
+    *..*) return 1 ;;
+    .* | *. ) return 1 ;;
   esac
   
-  # Check for leading/trailing dot
-  case "$domain" in
-    .* | *. )
-      return 1
-      ;;
-  esac
-  
-  # Split into labels and validate each
   oldIFS="$IFS"
   IFS='.'
   set -- $domain
@@ -245,123 +190,68 @@ validate_domain() {
   
   for label do
     label_len=${#label}
+    if [ "$label_len" -lt 1 ] || [ "$label_len" -gt 63 ]; then return 1; fi
     
-    # Each label must be 1-63 bytes
-    if [ "$label_len" -lt 1 ] || [ "$label_len" -gt 63 ]; then
-      return 1
-    fi
-    
-    # Labels can contain alphanumeric and hyphens
-    # First and last character must be alphanumeric
     first_char=$(printf '%s\n' "$label" | cut -c1)
     last_char=$(printf '%s\n' "$label" | cut -c${#label})
     
-    case "$first_char" in
-      [a-zA-Z0-9]) ;;
-      *) return 1 ;;
-    esac
+    case "$first_char" in [a-zA-Z0-9]) ;; *) return 1 ;; esac
+    case "$last_char" in [a-zA-Z0-9]) ;; *) return 1 ;; esac
     
-    case "$last_char" in
-      [a-zA-Z0-9]) ;;
-      *) return 1 ;;
-    esac
-    
-    # Middle characters can be alphanumeric or hyphen
-    if echo "$label" | grep -qE '[^a-zA-Z0-9-]'; then
-      return 1
-    fi
+    if echo "$label" | grep -qE '[^a-zA-Z0-9-]'; then return 1; fi
   done
   
   return 0
 }
 
-# Check if an email matches the policy
 check_email_against_policy() {
-  local email="$1"
-  local policy_file="$2"
-  local line
-  local trimmed_line
-  local entry
+  local email="$1" policy_file="$2" line trimmed_line entry
   
-  # Parse each line of policy and check for match
   while IFS= read -r line || [ -n "$line" ]; do
-    # Remove trailing CR
     line=$(printf '%s\n' "$line" | tr -d '\r')
-    
-    # Trim trailing whitespace
     trimmed_line=$(printf '%s\n' "$line" | sed 's/[[:space:]]*$//')
-    
-    # Skip empty lines and comments
     [ -z "$trimmed_line" ] && continue
-    if echo "$trimmed_line" | grep -qE '^[[:space:]]*#'; then
-      continue
-    fi
     
-    # Skip inline comments (should be caught by parser, but just in case)
-    if echo "$trimmed_line" | grep -q '#'; then
-      continue
-    fi
+    if echo "$trimmed_line" | grep -qE '^[[:space:]]*#'; then continue; fi
+    if echo "$trimmed_line" | grep -q '#'; then continue; fi
     
     entry="$trimmed_line"
     
-    # Check if it's a domain
     case "$entry" in
       @*)
         domain=$(printf '%s\n' "$entry" | sed 's/^@//')
-        # Extract domain from email (case-insensitive comparison)
         email_domain=$(printf '%s\n' "$email" | sed 's/^[^@]*@//')
-        
-        # Compare domains case-insensitively using tr
         email_domain_lower=$(printf '%s\n' "$email_domain" | tr '[:upper:]' '[:lower:]')
         domain_lower=$(printf '%s\n' "$domain" | tr '[:upper:]' '[:lower:]')
-        
-        if [ "$email_domain_lower" = "$domain_lower" ]; then
-          return 0
-        fi
+        if [ "$email_domain_lower" = "$domain_lower" ]; then return 0; fi
         continue
         ;;
     esac
     
-    # Check if it's an exact email match (case-sensitive)
-    if [ "$entry" = "$email" ]; then
-      return 0
-    fi
-    
+    if [ "$entry" = "$email" ]; then return 0; fi
   done < "$policy_file"
   
-  # No match found
   return 1
 }
 
-# Get the staged policy blob content
 get_staged_policy_content() {
-  local toplevel="$1"
-  local policy_content
-  local temp_file
-  
+  local toplevel="$1" policy_content temp_file
   cd "$toplevel"
   
-  # Check if .gitauthors is staged
   if ! git cat-file blob ':.gitauthors' >/dev/null 2>&1; then
     ga_policy_missing "Staged .gitauthors not found"
     return 2
   fi
   
-  # Read the staged content
   policy_content=$(git cat-file blob ':.gitauthors' 2>/dev/null) || {
     ga_git_error "Failed to read staged .gitauthors"
     return 2
   }
   
-  # Write to temp file for validation
-  temp_file=$(mktemp) || {
-    ga_git_error "Failed to create temporary file"
-    return 2
-  }
+  temp_file=$(mktemp) || { ga_git_error "Failed to create temporary file"; return 2; }
   printf '%s\n' "$policy_content" > "$temp_file"
   printf '%s\n' "$temp_file"
   
-  # Validate the staged policy
   if ! parse_policy "$temp_file"; then
     rm -f "$temp_file"
     return 2
@@ -370,426 +260,177 @@ get_staged_policy_content() {
   return 0
 }
 
-# Get HEAD policy content if it exists
 get_head_policy_content() {
-  local toplevel="$1"
-  local policy_content
-  local temp_file
-  
+  local toplevel="$1" policy_content temp_file
   cd "$toplevel"
   
-  # Check if HEAD exists
   if git rev-parse --verify HEAD >/dev/null 2>&1; then
-    # Check if .gitauthors exists in HEAD
     if git cat-file blob 'HEAD:.gitauthors' >/dev/null 2>&1; then
       policy_content=$(git cat-file blob 'HEAD:.gitauthors' 2>/dev/null) || {
         ga_git_error "Failed to read HEAD .gitauthors"
         return 2
       }
-      
-      # Write to temp file
-      temp_file=$(mktemp) || {
-        ga_git_error "Failed to create temporary file"
-        return 2
-      }
+      temp_file=$(mktemp) || { ga_git_error "Failed to create temporary file"; return 2; }
       printf '%s\n' "$policy_content" > "$temp_file"
       printf '%s\n' "$temp_file"
-      
-      # Validate the HEAD policy
-      if ! parse_policy "$temp_file"; then
-        rm -f "$temp_file"
-        return 2
-      fi
-      
+      if ! parse_policy "$temp_file"; then rm -f "$temp_file"; return 2; fi
       return 0
     else
-      # HEAD exists but no .gitauthors - this is valid for bootstrap
-      printf '\n'
-      return 0
+      printf '\n'; return 0
     fi
   else
-    # Unborn HEAD - this is valid for bootstrap
-    printf '\n'
-    return 0
+    printf '\n'; return 0
   fi
 }
 
-# Extract email from git ident
+# Extract email from git ident - use simple sed pattern
 extract_email_from_ident() {
-  local ident="$1"
-  
-  # Git ident format: "Name <email> timestamp timezone"
-  # We want the email part between < and >
-  echo "$ident" | sed -n 's/.*<\\([^>]*\\)>.*/\1/p'
+  echo "$1" | sed 's/.*<//;s/>.*//'
 }
 
-# Validate git ident and extract email
 validate_and_extract_email() {
-  local ident="$1"
-  local email
+  local ident="$1" email
   
-  # Check if ident has expected format
-  case "$ident" in
-    *'<'*'>'*) ;;
-    *)
-      ga_git_error "Invalid git ident format: $ident"
-      return 2
-      ;;
-  esac
+  case "$ident" in *'<'*'>'*) ;; *) ga_git_error "Invalid git ident: $ident"; return 2 ;; esac
   
   email=$(extract_email_from_ident "$ident")
+  [ -z "$email" ] && { ga_git_error "Failed to extract email from: $ident"; return 2; }
   
-  if [ -z "$email" ]; then
-    ga_git_error "Failed to extract email from ident: $ident"
-    return 2
-  fi
-  
-  # Basic email format validation - must contain @ and no spaces
-  if echo "$email" | grep -qE '[^@]+@[^@]+'; then
-    : # Valid
-  else
-    ga_git_error "Invalid email format in ident: $email"
-    return 2
-  fi
+  echo "$email" | grep -qE '[^@]+@[^@]+' || { ga_git_error "Invalid email format: $email"; return 2; }
   
   printf '%s\n' "$email"
   return 0
 }
 
-# Main validation for pending commit
 validate_pending_commit() {
-  local toplevel="$1"
-  local author_ident committer_ident
-  local author_email committer_email
-  local staged_policy_file head_policy_file
-  local author_approved_by_head committer_approved_by_head
-  local author_approved_by_staged committer_approved_by_staged
-  local author_needs_onboarding committer_needs_onboarding
-  local diff_exit_code
+  local toplevel="$1" author_ident committer_ident
+  local author_email committer_email staged_policy_file head_policy_file
+  local author_approved_by_head=false committer_approved_by_head=false
+  local author_approved_by_staged=false committer_approved_by_staged=false
+  local author_needs_onboarding=false committer_needs_onboarding=false
 
   cd "$toplevel"
   
-  # Get staged policy
-  if ! staged_policy_file=$(get_staged_policy_content "$toplevel"); then
-    exit $?
-  fi
+  staged_policy_file=$(get_staged_policy_content "$toplevel") || exit $?
+  head_policy_file=$(get_head_policy_content "$toplevel") || { rm -f "$staged_policy_file"; exit $?; }
   
-  # Get HEAD policy
-  head_policy_file=$(get_head_policy_content "$toplevel") || {
-    rm -f "$staged_policy_file"
-    exit $?
-  }
+  author_ident=$(git var GIT_AUTHOR_IDENT 2>/dev/null) || { ga_git_error "Failed to get author identity"; rm -f "$staged_policy_file" "$head_policy_file"; exit 2; }
+  committer_ident=$(git var GIT_COMMITTER_IDENT 2>/dev/null) || { ga_git_error "Failed to get committer identity"; rm -f "$staged_policy_file" "$head_policy_file"; exit 2; }
   
-  # Get author and committer identities
-  author_ident=$(git var GIT_AUTHOR_IDENT 2>/dev/null) || {
-    ga_git_error "Failed to get author identity"
-    rm -f "$staged_policy_file" "$head_policy_file"
-    exit 2
-  }
+  author_email=$(validate_and_extract_email "$author_ident") || { rm -f "$staged_policy_file" "$head_policy_file"; exit $?; }
+  committer_email=$(validate_and_extract_email "$committer_ident") || { rm -f "$staged_policy_file" "$head_policy_file"; exit $?; }
   
-  committer_ident=$(git var GIT_COMMITTER_IDENT 2>/dev/null) || {
-    ga_git_error "Failed to get committer identity"
-    rm -f "$staged_policy_file" "$head_policy_file"
-    exit 2
-  }
-  
-  # Extract emails
-  author_email=$(validate_and_extract_email "$author_ident") || {
-    rm -f "$staged_policy_file" "$head_policy_file"
-    exit $?
-  }
-  
-  committer_email=$(validate_and_extract_email "$committer_ident") || {
-    rm -f "$staged_policy_file" "$head_policy_file"
-    exit $?
-  }
-  
-  # Check if both identities are approved by HEAD policy
   if [ -n "$head_policy_file" ] && [ -f "$head_policy_file" ] && [ -s "$head_policy_file" ]; then
-    if check_email_against_policy "$author_email" "$head_policy_file"; then
-      author_approved_by_head=true
-    else
-      author_approved_by_head=false
-    fi
-    
-    if check_email_against_policy "$committer_email" "$head_policy_file"; then
-      committer_approved_by_head=true
-    else
-      committer_approved_by_head=false
-    fi
-  else
-    # No HEAD policy - bootstrap scenario
-    author_approved_by_head=false
-    committer_approved_by_head=false
+    check_email_against_policy "$author_email" "$head_policy_file" && author_approved_by_head=true
+    check_email_against_policy "$committer_email" "$head_policy_file" && committer_approved_by_head=true
   fi
   
-  # Check if both identities are approved by staged policy
-  if check_email_against_policy "$author_email" "$staged_policy_file"; then
-    author_approved_by_staged=true
-  else
-    author_approved_by_staged=false
-  fi
+  check_email_against_policy "$author_email" "$staged_policy_file" && author_approved_by_staged=true
+  check_email_against_policy "$committer_email" "$staged_policy_file" && committer_approved_by_staged=true
   
-  if check_email_against_policy "$committer_email" "$staged_policy_file"; then
-    committer_approved_by_staged=true
-  else
-    committer_approved_by_staged=false
-  fi
-  
-  # Clean up temp files
   rm -f "$staged_policy_file" "$head_policy_file"
   
-  # Decision logic:
-  # If both identities are approved by HEAD, allow
-  if $author_approved_by_head && $committer_approved_by_head; then
-    exit 0
-  fi
+  if $author_approved_by_head && $committer_approved_by_head; then exit 0; fi
   
-  # If either identity is approved only by staged policy, require policy-only commit
-  author_needs_onboarding=false
-  if $author_approved_by_staged && ! $author_approved_by_head; then
-    author_needs_onboarding=true
-  fi
-  
-  committer_needs_onboarding=false
-  if $committer_approved_by_staged && ! $committer_approved_by_head; then
-    committer_needs_onboarding=true
-  fi
+  $author_approved_by_staged && ! $author_approved_by_head && author_needs_onboarding=true
+  $committer_approved_by_staged && ! $committer_approved_by_head && committer_needs_onboarding=true
   
   if $author_needs_onboarding || $committer_needs_onboarding; then
-    # Check if .gitauthors is the only changed path and actually changed
-    # First check that .gitauthors is actually changed (diff returns non-zero)
-    if git diff --cached --quiet --no-renames --no-ext-diff --no-textconv -- \
-      ':(top,literal).gitauthors' 2>/dev/null; then
-      diff_exit_code=$?
-      if [ "$diff_exit_code" -ne 0 ]; then
-        # .gitauthors is changed, now check that nothing else is changed
-        if git diff --cached --quiet --no-renames --no-ext-diff --no-textconv -- \
-          . ':(top,exclude,literal).gitauthors' 2>/dev/null; then
-          diff_exit_code=$?
-          if [ "$diff_exit_code" -eq 0 ]; then
-            # Policy-only change - allow onboarding
-            exit 0
-          fi
+    if git diff --cached --quiet --no-renames --no-ext-diff --no-textconv -- ':(top,literal).gitauthors' 2>/dev/null; then
+      if [ $? -ne 0 ]; then
+        if git diff --cached --quiet --no-renames --no-ext-diff --no-textconv -- . ':(top,exclude,literal).gitauthors' 2>/dev/null; then
+          [ $? -eq 0 ] && exit 0
         fi
       fi
     fi
-    
-    # Onboarding failed - either mixed content or .gitauthors not actually changed
     ga_onboarding_not_policy_only "Onboarding requires .gitauthors to be the only changed path and actually changed"
     exit 1
   fi
   
-  # Both identities are denied by both policies
   ga_identity_denied "Author email $author_email and committer email $committer_email are not approved by policy"
   printf 'Suggest correcting with: git config --local user.email <approved-email>\n' >&2
   exit 1
 }
 
-# Validate policy mode
 validate_policy_mode() {
   local policy_file="$1"
-  
-  if [ ! -f "$policy_file" ]; then
-    ga_policy_missing "Policy file not found: $policy_file"
-    exit 2
-  fi
-  
-  if parse_policy "$policy_file"; then
-    printf 'Policy is valid\n' >&2
-    exit 0
-  else
-    exit 2
-  fi
+  [ ! -f "$policy_file" ] && { ga_policy_missing "Policy file not found: $policy_file"; exit 2; }
+  parse_policy "$policy_file" && { printf 'Policy is valid\n' >&2; exit 0; } || exit 2
 }
 
-# Range validation mode
 range_mode() {
-  local base_ref="$1"
-  local head_ref="$2"
-  local toplevel
-  local resolved_base resolved_head
-  local commit_range
-  local current_commit first_parent_commit
-  local commit_email author_email committer_email
+  local base_ref="$1" head_ref="$2" toplevel resolved_base resolved_head
+  local current_commit first_parent_commit author_email committer_email
   local commit_policy_file first_parent_policy_file
-  local approved
-  
+
   toplevel=$(resolve_git_toplevel) || exit 2
   cd "$toplevel"
   
-  # Resolve inputs using git rev-parse
-  resolved_base=$(git rev-parse --verify --end-of-options "${base_ref}^{commit}" 2>/dev/null) || {
-    ga_git_error "Invalid base reference: $base_ref"
-    exit 2
-  }
+  resolved_base=$(git rev-parse --verify --end-of-options "${base_ref}^{commit}" 2>/dev/null) || { ga_git_error "Invalid base reference: $base_ref"; exit 2; }
+  resolved_head=$(git rev-parse --verify --end-of-options "${head_ref}^{commit}" 2>/dev/null) || { ga_git_error "Invalid head reference: $head_ref"; exit 2; }
   
-  resolved_head=$(git rev-parse --verify --end-of-options "${head_ref}^{commit}" 2>/dev/null) || {
-    ga_git_error "Invalid head reference: $head_ref"
-    exit 2
-  }
+  git merge-base --is-ancestor "$resolved_base" "$resolved_head" >/dev/null 2>&1 || { ga_git_error "BASE is not an ancestor of HEAD"; exit 2; }
+  [ "$resolved_base" = "$resolved_head" ] && exit 0
   
-  # Check if BASE is ancestor of HEAD
-  if ! git merge-base --is-ancestor "$resolved_base" "$resolved_head" >/dev/null 2>&1; then
-    ga_git_error "BASE ($base_ref) is not an ancestor of HEAD ($head_ref)"
-    exit 2
-  fi
-  
-  # If equal refs, succeed with empty range
-  if [ "$resolved_base" = "$resolved_head" ]; then
-    exit 0
-  fi
-  
-  # Process each commit in the range
-  while IFS= read -r current_commit; do
+  git rev-list --reverse "${resolved_base}..${resolved_head}" 2>/dev/null | while IFS= read -r current_commit; do
     [ -z "$current_commit" ] && continue
     
-    # Get first parent of current commit
-    first_parent_commit=$(git rev-parse --verify "${current_commit}^1" 2>/dev/null) || {
-      # This might be a root commit (no parents)
-      if git rev-parse --verify "${current_commit}^@" >/dev/null 2>&1; then
-        # Has parents, but ^1 failed - use empty tree for root
-        first_parent_commit=""
-      else
-        # No parents at all - root commit
-        first_parent_commit=""
-      fi
-    }
+    first_parent_commit=$(git rev-parse --verify "${current_commit}^1" 2>/dev/null) || first_parent_commit=""
     
-    # Get author and committer emails from stored commit metadata
-    author_email=$(git show -s --format='%ae' "$current_commit" 2>/dev/null) || {
-      ga_git_error "Failed to get author email for commit $current_commit"
-      exit 2
-    }
+    author_email=$(git show -s --format='%ae' "$current_commit" 2>/dev/null) || { ga_git_error "Failed to get author email for commit $current_commit"; exit 2; }
+    committer_email=$(git show -s --format='%ce' "$current_commit" 2>/dev/null) || { ga_git_error "Failed to get committer email for commit $current_commit"; exit 2; }
     
-    committer_email=$(git show -s --format='%ce' "$current_commit" 2>/dev/null) || {
-      ga_git_error "Failed to get committer email for commit $current_commit"
-      exit 2
-    }
+    commit_policy_file=$(get_commit_policy "$current_commit") || { ga_git_error "Failed to get policy for commit $current_commit"; exit 2; }
     
-    # Get current commit's policy
-    commit_policy_file=$(get_commit_policy "$current_commit") || {
-      ga_git_error "Failed to get policy for commit $current_commit"
-      exit 2
-    }
-    
-    # Get first parent's policy
     if [ -n "$first_parent_commit" ] && [ "$first_parent_commit" != "$current_commit" ]; then
-      first_parent_policy_file=$(get_commit_policy "$first_parent_commit") || {
-        # If first parent has no policy, use empty for bootstrap
-        first_parent_policy_file=""
-      }
+      first_parent_policy_file=$(get_commit_policy "$first_parent_commit") || first_parent_policy_file=""
     else
-      # Root commit or no parent - use empty tree for bootstrap
       first_parent_policy_file=""
     fi
     
-    # Check author against policies
-    if ! check_commit_identity "$author_email" "$commit_policy_file" "$first_parent_policy_file"; then
-      ga_identity_denied "Author email $author_email not approved for commit $current_commit"
-      exit 1
-    fi
+    ! check_commit_identity "$author_email" "$commit_policy_file" "$first_parent_policy_file" && { ga_identity_denied "Author $author_email not approved for $current_commit"; exit 1; }
+    ! check_commit_identity "$committer_email" "$commit_policy_file" "$first_parent_policy_file" && { ga_identity_denied "Committer $committer_email not approved for $current_commit"; exit 1; }
     
-    # Check committer against policies
-    if ! check_commit_identity "$committer_email" "$commit_policy_file" "$first_parent_policy_file"; then
-      ga_identity_denied "Committer email $committer_email not approved for commit $current_commit"
-      exit 1
-    fi
-    
-    # Clean up temp files
     rm -f "$commit_policy_file" "$first_parent_policy_file"
-    
-  done <<EOF
-$(git rev-list --reverse "${resolved_base}..${resolved_head}" 2>/dev/null || echo "")
-EOF
+  done
   
   exit 0
 }
 
-# Get policy for a specific commit
 get_commit_policy() {
-  local commit="$1"
-  local policy_content
-  local temp_file
+  local commit="$1" policy_content temp_file
   
-  # Check if .gitauthors exists in this commit
   if git cat-file blob "${commit}:.gitauthors" >/dev/null 2>&1; then
-    policy_content=$(git cat-file blob "${commit}:.gitauthors" 2>/dev/null) || {
-      ga_git_error "Failed to read .gitauthors from commit $commit"
-      return 2
-    }
-    
-    # Write to temp file
-    temp_file=$(mktemp) || {
-      ga_git_error "Failed to create temporary file"
-      return 2
-    }
+    policy_content=$(git cat-file blob "${commit}:.gitauthors" 2>/dev/null) || { ga_git_error "Failed to read .gitauthors from $commit"; return 2; }
+    temp_file=$(mktemp) || { ga_git_error "Failed to create temporary file"; return 2; }
     printf '%s\n' "$policy_content" > "$temp_file"
-    
-    # Validate the policy
-    if ! parse_policy "$temp_file"; then
-      rm -f "$temp_file"
-      return 2
-    fi
-    
+    parse_policy "$temp_file" || { rm -f "$temp_file"; return 2; }
     printf '%s\n' "$temp_file"
     return 0
   else
-    # No policy in this commit
-    printf '\n'
-    return 0
+    printf '\n'; return 0
   fi
 }
 
-# Check commit identity against commit and parent policies
 check_commit_identity() {
-  local email="$1"
-  local commit_policy_file="$2"
-  local parent_policy_file="$3"
+  local email="$1" commit_policy_file="$2" parent_policy_file="$3"
   
-  # If we have a commit policy, check against it
-  if [ -n "$commit_policy_file" ] && [ -f "$commit_policy_file" ] && [ -s "$commit_policy_file" ]; then
-    # Check if identity is approved by commit policy
-    if check_email_against_policy "$email" "$commit_policy_file"; then
-      # Approved by commit policy
-      return 0
-    fi
-  fi
+  [ -n "$commit_policy_file" ] && [ -f "$commit_policy_file" ] && [ -s "$commit_policy_file" ] && check_email_against_policy "$email" "$commit_policy_file" && return 0
+  [ -n "$parent_policy_file" ] && [ -f "$parent_policy_file" ] && [ -s "$parent_policy_file" ] && check_email_against_policy "$email" "$parent_policy_file" && return 0
+  [ -z "$commit_policy_file" ] && [ -z "$parent_policy_file" ] && return 0
   
-  # If we have a parent policy, check against it
-  if [ -n "$parent_policy_file" ] && [ -f "$parent_policy_file" ] && [ -s "$parent_policy_file" ]; then
-    # Check if identity is approved by parent policy
-    if check_email_against_policy "$email" "$parent_policy_file"; then
-      # Approved by parent policy - this is allowed for stored commits
-      # (range validation allows identities approved by either commit or parent policy)
-      return 0
-    fi
-  fi
-  
-  # Check if this is a root commit with no policy (bootstrap)
-  if [ -z "$commit_policy_file" ] && [ -z "$parent_policy_file" ]; then
-    # No policy anywhere - this is allowed for bootstrap
-    return 0
-  fi
-  
-  # Identity not approved by any policy
   return 1
 }
 
-# Main entry point
 main() {
-  # Parse arguments
   if [ $# -eq 0 ]; then
-    # No arguments: validate pending commit
     toplevel=$(resolve_git_toplevel) || exit 2
     validate_pending_commit "$toplevel"
     exit $?
   elif [ "$1" = "--validate-policy" ] && [ $# -eq 2 ]; then
-    # Validate policy file
     validate_policy_mode "$2"
     exit $?
   elif [ "$1" = "--range" ] && [ $# -eq 3 ]; then
-    # Range mode (will be implemented in Phase C)
     range_mode "$2" "$3"
     exit $?
   else
@@ -797,5 +438,4 @@ main() {
   fi
 }
 
-# Run main with all arguments
 main "$@"
