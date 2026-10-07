@@ -603,10 +603,177 @@ validate_policy_mode() {
   fi
 }
 
-# Range validation mode (will be implemented in Phase C)
+# Range validation mode
 range_mode() {
-  ga_git_error "Range mode not yet implemented"
-  exit 2
+  local base_ref="$1"
+  local head_ref="$2"
+  local toplevel
+  local resolved_base resolved_head
+  local commit_range
+  local current_commit first_parent_commit
+  local commit_email author_email committer_email
+  local commit_policy_file first_parent_policy_file
+  local approved
+  
+  toplevel=$(resolve_git_toplevel) || exit 2
+  cd "$toplevel"
+  
+  # Resolve inputs using git rev-parse
+  resolved_base=$(git rev-parse --verify --end-of-options "${base_ref}^{commit}" 2>/dev/null) || {
+    ga_git_error "Invalid base reference: $base_ref"
+    exit 2
+  }
+  
+  resolved_head=$(git rev-parse --verify --end-of-options "${head_ref}^{commit}" 2>/dev/null) || {
+    ga_git_error "Invalid head reference: $head_ref"
+    exit 2
+  }
+  
+  # Check if BASE is ancestor of HEAD
+  if ! git merge-base --is-ancestor "$resolved_base" "$resolved_head" >/dev/null 2>&1; then
+    ga_git_error "BASE ($base_ref) is not an ancestor of HEAD ($head_ref)"
+    exit 2
+  fi
+  
+  # If equal refs, succeed with empty range
+  if [ "$resolved_base" = "$resolved_head" ]; then
+    exit 0
+  fi
+  
+  # Process each commit in the range
+  while IFS= read -r current_commit; do
+    [ -z "$current_commit" ] && continue
+    
+    # Get first parent of current commit
+    first_parent_commit=$(git rev-parse --verify "${current_commit}^1" 2>/dev/null) || {
+      # This might be a root commit (no parents)
+      if git rev-parse --verify "${current_commit}^@" >/dev/null 2>&1; then
+        # Has parents, but ^1 failed - use empty tree for root
+        first_parent_commit=""
+      else
+        # No parents at all - root commit
+        first_parent_commit=""
+      fi
+    }
+    
+    # Get author and committer emails from stored commit metadata
+    author_email=$(git show -s --format='%ae' "$current_commit" 2>/dev/null) || {
+      ga_git_error "Failed to get author email for commit $current_commit"
+      exit 2
+    }
+    
+    committer_email=$(git show -s --format='%ce' "$current_commit" 2>/dev/null) || {
+      ga_git_error "Failed to get committer email for commit $current_commit"
+      exit 2
+    }
+    
+    # Get current commit's policy
+    commit_policy_file=$(get_commit_policy "$current_commit") || {
+      ga_git_error "Failed to get policy for commit $current_commit"
+      exit 2
+    }
+    
+    # Get first parent's policy
+    if [ -n "$first_parent_commit" ] && [ "$first_parent_commit" != "$current_commit" ]; then
+      first_parent_policy_file=$(get_commit_policy "$first_parent_commit") || {
+        # If first parent has no policy, use empty for bootstrap
+        first_parent_policy_file=""
+      }
+    else
+      # Root commit or no parent - use empty tree for bootstrap
+      first_parent_policy_file=""
+    fi
+    
+    # Check author against policies
+    if ! check_commit_identity "$author_email" "$commit_policy_file" "$first_parent_policy_file"; then
+      ga_identity_denied "Author email $author_email not approved for commit $current_commit"
+      exit 1
+    fi
+    
+    # Check committer against policies
+    if ! check_commit_identity "$committer_email" "$commit_policy_file" "$first_parent_policy_file"; then
+      ga_identity_denied "Committer email $committer_email not approved for commit $current_commit"
+      exit 1
+    fi
+    
+    # Clean up temp files
+    rm -f "$commit_policy_file" "$first_parent_policy_file"
+    
+  done <<EOF
+$(git rev-list --reverse "${resolved_base}..${resolved_head}" 2>/dev/null || echo "")
+EOF
+  
+  exit 0
+}
+
+# Get policy for a specific commit
+get_commit_policy() {
+  local commit="$1"
+  local policy_content
+  local temp_file
+  
+  # Check if .gitauthors exists in this commit
+  if git cat-file blob "${commit}:.gitauthors" >/dev/null 2>&1; then
+    policy_content=$(git cat-file blob "${commit}:.gitauthors" 2>/dev/null) || {
+      ga_git_error "Failed to read .gitauthors from commit $commit"
+      return 2
+    }
+    
+    # Write to temp file
+    temp_file=$(mktemp) || {
+      ga_git_error "Failed to create temporary file"
+      return 2
+    }
+    printf '%s\n' "$policy_content" > "$temp_file"
+    
+    # Validate the policy
+    if ! parse_policy "$temp_file"; then
+      rm -f "$temp_file"
+      return 2
+    fi
+    
+    printf '%s\n' "$temp_file"
+    return 0
+  else
+    # No policy in this commit
+    printf '\n'
+    return 0
+  fi
+}
+
+# Check commit identity against commit and parent policies
+check_commit_identity() {
+  local email="$1"
+  local commit_policy_file="$2"
+  local parent_policy_file="$3"
+  
+  # If we have a commit policy, check against it
+  if [ -n "$commit_policy_file" ] && [ -f "$commit_policy_file" ] && [ -s "$commit_policy_file" ]; then
+    # Check if identity is approved by commit policy
+    if check_email_against_policy "$email" "$commit_policy_file"; then
+      # Approved by commit policy
+      return 0
+    fi
+  fi
+  
+  # If we have a parent policy, check against it
+  if [ -n "$parent_policy_file" ] && [ -f "$parent_policy_file" ] && [ -s "$parent_policy_file" ]; then
+    # Check if identity is approved by parent policy
+    if check_email_against_policy "$email" "$parent_policy_file"; then
+      # Approved by parent policy - this is allowed for stored commits
+      # (range validation allows identities approved by either commit or parent policy)
+      return 0
+    fi
+  fi
+  
+  # Check if this is a root commit with no policy (bootstrap)
+  if [ -z "$commit_policy_file" ] && [ -z "$parent_policy_file" ]; then
+    # No policy anywhere - this is allowed for bootstrap
+    return 0
+  fi
+  
+  # Identity not approved by any policy
+  return 1
 }
 
 # Main entry point
