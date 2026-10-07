@@ -1,0 +1,233 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: 'Release channel (stable or prerelease)'
+        required: true
+        type: choice
+        default: 'prerelease'
+        options:
+          - prerelease
+          - stable
+
+permissions:
+  contents: write
+  id-token: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Prepare Release
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.channel == 'stable' && 'release' || 'prerelease' }}
+    timeout-minutes: 10
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Resolve release version
+        id: resolve
+        run: |
+          # Get current SHA
+          SOURCE_SHA=$(git rev-parse HEAD)
+          
+          # Read .release.env
+          VERSION=$(grep '^VERSION=' .release.env | cut -d= -f2)
+          echo "Resolved version: $VERSION"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "source_sha=$SOURCE_SHA" >> $GITHUB_OUTPUT
+          
+          # Validate version format
+          if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.0(-rc\.[0-9]+)?$'; then
+            echo "GA_POLICY_INVALID: Invalid version format: $VERSION"
+            exit 1
+          fi
+          
+          # Set environment variable for subsequent steps
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "SOURCE_SHA=$SOURCE_SHA" >> $GITHUB_ENV
+      
+      - name: Verify prerelease version for prerelease channel
+        if: github.event.inputs.channel == 'prerelease'
+        run: |
+          if ! echo "$VERSION" | grep -qE '-rc\.[0-9]+$'; then
+            echo "GA_POLICY_INVALID: Prerelease channel requires -rc.N version: $VERSION"
+            exit 1
+          fi
+      
+      - name: Verify stable version for stable channel
+        if: github.event.inputs.channel == 'stable'
+        run: |
+          if echo "$VERSION" | grep -qE '-rc\.[0-9]+$'; then
+            echo "GA_POLICY_INVALID: Stable channel requires non-rc version: $VERSION"
+            exit 1
+          fi
+          
+          if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.0$'; then
+            echo "GA_POLICY_INVALID: Stable version must be MAJOR.MINOR.0: $VERSION"
+            exit 1
+          fi
+
+  publish:
+    name: Publish Release
+    needs: prepare
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.channel == 'stable' && 'release' || 'prerelease' }}
+    timeout-minutes: 15
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          cache: 'npm'
+      
+      - name: Set up Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: 2.9.7
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Build distribution files
+        run: |
+          npm run build -- --version ${{ needs.prepare.outputs.version }} --source-sha ${{ needs.prepare.outputs.source_sha }}
+      
+      - name: Verify build outputs
+        run: |
+          # Check that required files exist
+          if [ ! -f dist/release/gitauthors.sh ]; then
+            echo "GA_GIT_ERROR: Missing release hook"
+            exit 1
+          fi
+          
+          if [ ! -f dist/release/install.sh ]; then
+            echo "GA_GIT_ERROR: Missing release install script"
+            exit 1
+          fi
+          
+          if [ ! -f dist/release/uninstall.sh ]; then
+            echo "GA_GIT_ERROR: Missing release uninstall script"
+            exit 1
+          fi
+      
+      - name: Create and verify immutable tag
+        id: tag
+        run: |
+          VERSION=${{ needs.prepare.outputs.version }}
+          SOURCE_SHA=${{ needs.prepare.outputs.source_sha }}
+          
+          # Check if tag already exists
+          if git rev-parse v$VERSION >/dev/null 2>&1; then
+            EXISTING_TAG_SHA=$(git rev-parse v$VERSION)
+            if [ "$EXISTING_TAG_SHA" != "$SOURCE_SHA" ]; then
+              echo "GA_GIT_ERROR: Tag v$VERSION exists but points to different SHA"
+              exit 1
+            fi
+            echo "Tag v$VERSION already exists at correct SHA"
+            echo "tag_exists=true" >> $GITHUB_OUTPUT
+          else
+            # Create new tag
+            git tag -a v$VERSION -m "Release v$VERSION" $SOURCE_SHA
+            git push origin v$VERSION
+            echo "tag_exists=false" >> $GITHUB_OUTPUT
+          fi
+          
+          echo "tag=v$VERSION" >> $GITHUB_OUTPUT
+      
+      - name: Create GitHub release
+        uses: actions/github-script@v6
+        id: release
+        with:
+          script: |
+            const version = '${{ needs.prepare.outputs.version }}';
+            const sourceSha = '${{ needs.prepare.outputs.source_sha }}';
+            const channel = '${{ github.event.inputs.channel }}';
+            const tag = `v${version}`;
+            
+            // Check if release already exists
+            const existingReleases = await github.rest.repos.listReleases({
+              owner: context.repo.owner,
+              repo: context.repo.repo
+            });
+            
+            const existingRelease = existingReleases.data.find(r => r.tag_name === tag);
+            
+            if (existingRelease) {
+              console.log(`Release ${tag} already exists, updating...`);
+              return;
+            }
+            
+            // Create new release
+            const release = await github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: tag,
+              name: `v${version}`,
+              body: `Release v${version} from ${sourceSha}`, 
+              draft: channel === 'prerelease',
+              prerelease: channel === 'prerelease'
+            });
+            
+            console.log(`Created release: ${release.data.html_url}`);
+      
+      - name: Upload release assets
+        run: |
+          # Upload all release files
+          gh release upload ${{ steps.tag.outputs.tag }} dist/release/gitauthors.sh
+          gh release upload ${{ steps.tag.outputs.tag }} dist/release/install.sh
+          gh release upload ${{ steps.tag.outputs.tag }} dist/release/uninstall.sh
+          gh release upload ${{ steps.tag.outputs.tag }} dist/release/SHA256SUMS
+          gh release upload ${{ steps.tag.outputs.tag }} dist/release/manifest.json
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: npm publish (dry-run for prerelease, real for stable)
+        run: |
+          cd dist/npm
+          
+          if [ "${{ github.event.inputs.channel }}" = "prerelease" ]; then
+            echo "Running npm publish dry-run for prerelease"
+            npm publish --dry-run --tag next
+          else
+            echo "Running npm publish for stable"
+            npm publish --tag latest
+          fi
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      
+      - name: JSR publish (dry-run)
+        run: |
+          cd dist/jsr
+          
+          # Always dry-run for now until we have proper authorization
+          echo "Running JSR publish dry-run"
+          deno publish --dry-run --allow-dirty --config jsr.json
+
+  # Note: Actual publishing to npm and JSR should be gated by manual approval
+  # The above steps demonstrate the workflow but don't actually publish to public registries

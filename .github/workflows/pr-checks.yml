@@ -1,0 +1,112 @@
+name: PR Checks
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+
+jobs:
+  pr-checks:
+    name: PR Checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Validate PR title
+        run: |
+          # Get PR title from GitHub event
+          PR_TITLE="${{ github.event.pull_request.title }}"
+          
+          # Create temporary commit message file
+          echo "$PR_TITLE" > /tmp/pr-title.txt
+          
+          # Validate with commitlint
+          ./node_modules/.bin/commitlint --edit /tmp/pr-title.txt || {
+            echo "PR title does not follow Conventional Commits: $PR_TITLE"
+            exit 1
+          }
+      
+      - name: Get commit range
+        id: commits
+        run: |
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+          
+          # Get the commit range
+          echo "range=$BASE_SHA..$HEAD_SHA" >> $GITHUB_OUTPUT
+      
+      - name: Validate commit messages
+        run: |
+          BASE_SHA="${{ steps.commits.outputs.range }}"
+          
+          # Get list of commits
+          COMMITS=$(git rev-list --format='%H %s' $BASE_SHA)
+          
+          echo "Validating commits:"
+          echo "$COMMITS"
+          
+          # Validate each commit message
+          while read -r commit_hash commit_subject; do
+            [ -z "$commit_subject" ] && continue
+            
+            echo "Validating: $commit_subject"
+            echo "$commit_subject" > /tmp/commit-subject.txt
+            
+            ./node_modules/.bin/commitlint --edit /tmp/commit-subject.txt || {
+              echo "Invalid commit message: $commit_subject"
+              exit 1
+            }
+          done <<< "$COMMITS"
+      
+      - name: Validate commit authors with gitauthors
+        run: |
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+          
+          # Use gitauthors to validate the entire PR range
+          sh hooks/gitauthors.sh --range $BASE_SHA $HEAD_SHA
+      
+      - name: Check version consistency if changed
+        run: |
+          # Check if .release.env or package.json was changed
+          CHANGED_FILES=$(git diff --name-only ${{ steps.commits.outputs.range }} | grep -E '\.(release\.env|package\.json)$')
+          
+          if [ -n "$CHANGED_FILES" ]; then
+            echo "Version files changed, checking consistency..."
+            npm run check:version
+          else
+            echo "No version files changed, skipping version check"
+          fi
+
+  pr-required:
+    name: pr-required
+    needs: pr-checks
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    
+    steps:
+      - name: Check PR checks result
+        run: |
+          if [ "${{ needs.pr-checks.result }}" != "success" ]; then
+            echo "PR checks failed"
+            exit 1
+          fi
+          echo "PR checks passed"
