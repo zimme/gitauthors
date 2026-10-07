@@ -1,0 +1,36 @@
+# Code Owners for gitauthors
+# See https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Core validation logic
+hooks/gitauthors.sh @zimme
+
+# Installation and setup
+install.sh @zimme
+uninstall.sh @zimme
+
+# Package configuration
+package.json @zimme
+scripts/build.mjs @zimme
+
+# Documentation
+README.md @zimme
+docs/ @zimme
+
+# Configuration files
+.release.env @zimme
+.husky/ @zimme
+commitlint.config.mjs @zimme
+
+# Test infrastructure
+test/ @zimme
+scripts/test.sh @zimme
+scripts/test-integration.sh @zimme
+
+# Source files
+src/ @zimme
+
+# Scripts
+scripts/ @zimme
+
+# Default: @zimme
+* @zimme
