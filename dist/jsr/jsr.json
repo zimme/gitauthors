@@ -1,0 +1,17 @@
+{
+  "name": "@zimme/gitauthors",
+  "version": "1.0.0-rc.1",
+  "description": "Git author validation hook - mistake prevention for git commits",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/mod.mjs",
+    "./src/mod.mjs": "./src/mod.mjs",
+    "./src/cli.mjs": "./src/cli.mjs"
+  },
+  "files": [
+    "hooks",
+    "src",
+    "install.sh",
+    "uninstall.sh"
+  ]
+}

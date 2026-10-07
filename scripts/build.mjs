@@ -46,18 +46,11 @@ function readReleaseEnv() {
 
 // Validate version format
 function validateVersion(version) {
-  // Must be a valid semver: MAJOR.MINOR.PATCH or MAJOR.MINOR.PATCH-rc.NUMBER
-  const validVersionPattern = /^\d+\.\d+\.\d+(-\d+)?$/;
-  const rcVersionPattern = /^\d+\.\d+\.0-rc\.\d+$/;
-  const stableVersionPattern = /^\d+\.\d+\.0$/;
+  // Must be MAJOR.MINOR.0 or MAJOR.MINOR.0-rc.NUMBER
+  const validVersionPattern = /^\d+\.\d+\.0(-rc\.\d+)?$/;
   
   if (!validVersionPattern.test(version)) {
-    console.error(`GA_POLICY_INVALID: Invalid version format: ${version}`);
-    process.exit(2);
-  }
-  
-  if (!rcVersionPattern.test(version) && !stableVersionPattern.test(version)) {
-    console.error(`GA_POLICY_INVALID: Version must be MAJOR.MINOR.0 or MAJOR.MINOR.0-rc.NUMBER: ${version}`);
+    console.error(`GA_POLICY_INVALID: Invalid version format: ${version}. Must be MAJOR.MINOR.0 or MAJOR.MINOR.0-rc.N`);
     process.exit(2);
   }
   

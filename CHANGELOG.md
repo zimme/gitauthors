@@ -22,7 +22,7 @@ and this project adheres to [ComVer](https://gitlab.com/staltz/comver/-/raw/mast
 
 - Initial project setup
 
-## [1.0.0] - 2026-10-07
+## [1.0.0-rc.1] - 2026-10-07
 
 ### Added
 
@@ -35,5 +35,8 @@ and this project adheres to [ComVer](https://gitlab.com/staltz/comver/-/raw/mast
   - npm/JSR distribution
   - Development tooling
   - CI/CD workflows
+- Initial prerelease for testing and validation
+
+## [1.0.0] - 2026-10-07
 
 This is the initial stable release of gitauthors.
