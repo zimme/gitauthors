@@ -1,0 +1,244 @@
+#!/usr/bin/env node
+// Prepare release - changes .release.env and CHANGELOG for the next version
+// Does NOT commit, tag, or publish
+
+import { readFileSync, writeFileSync, existsSync, statSync } from 'fs';
+import { resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
+import { execSync } from 'child_process';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const repoRoot = resolve(__dirname, '..');
+
+/**
+ * Reads the current version from .release.env
+ */
+function readCurrentVersion() {
+  const releaseEnvPath = resolve(repoRoot, '.release.env');
+  if (!existsSync(releaseEnvPath)) {
+    throw new Error('GA_GIT_ERROR: .release.env not found');
+  }
+  
+  const content = readFileSync(releaseEnvPath, 'utf8');
+  const lines = content.split('\n');
+  
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed === '' || trimmed.startsWith('#')) continue;
+    const [key, value] = trimmed.split('=');
+    if (key === 'VERSION') {
+      return value;
+    }
+  }
+  
+  throw new Error('GA_POLICY_INVALID: VERSION not found in .release.env');
+}
+
+/**
+ * Updates .release.env with new version
+ */
+function updateReleaseEnv(version) {
+  const releaseEnvPath = resolve(repoRoot, '.release.env');
+  const content = readFileSync(releaseEnvPath, 'utf8');
+  
+  const newContent = content.replace(
+    /^VERSION=.*/m,
+    `VERSION=${version}`
+  );
+  
+  writeFileSync(releaseEnvPath, newContent);
+  console.log(`Updated .release.env to VERSION=${version}`);
+}
+
+/**
+ * Bumps version according to ComVer rules
+ */
+function bumpVersion(currentVersion, bumpType) {
+  const validPattern = /^(\d+)\.(\d+)\.0(-rc\.\d+)?$/;
+  if (!validPattern.test(currentVersion)) {
+    throw new Error(`GA_POLICY_INVALID: Invalid current version: ${currentVersion}`);
+  }
+  
+  const match = currentVersion.match(validPattern);
+  const major = parseInt(match[1], 10);
+  const minor = parseInt(match[2], 10);
+  
+  if (bumpType === 'major') {
+    return `${major + 1}.0.0`;
+  } else if (bumpType === 'minor') {
+    return `${major}.${minor + 1}.0`;
+  } else {
+    throw new Error(`GA_POLICY_INVALID: Unknown bump type: ${bumpType}`);
+  }
+}
+
+/**
+ * Gets the latest completed stable release version
+ */
+function getLatestStableVersion() {
+  try {
+    // Get all tags, filter for stable versions, and sort
+    const tags = execSync('git tag -l v* --sort=-version:refname', { 
+      cwd: repoRoot, 
+      encoding: 'utf8' 
+    }).trim().split('\n');
+    
+    // Filter for stable versions (no -rc)
+    const stableTags = tags.filter(tag => {
+      const version = tag.replace(/^v/, '');
+      return !version.includes('-rc') && /^\d+\.\d+\.0$/.test(version);
+    });
+    
+    if (stableTags.length === 0) {
+      // No stable releases yet - return base version
+      return '0.0.0';
+    }
+    
+    // Get the highest stable version
+    const latestTag = stableTags[0];
+    const version = latestTag.replace(/^v/, '');
+    return version;
+    
+  } catch (error) {
+    console.warn(`GA_GIT_ERROR: Could not get latest stable version: ${error.message}`);
+    // If we can't get tags, assume no previous stable releases
+    return '0.0.0';
+  }
+}
+
+/**
+ * Updates CHANGELOG.md with new version and date
+ */
+function updateChangelog(version, changelogPath = resolve(repoRoot, 'CHANGELOG.md')) {
+  const today = new Date().toISOString().split('T')[0];
+  
+  let changelogContent = '';
+  
+  if (existsSync(changelogPath)) {
+    changelogContent = readFileSync(changelogPath, 'utf8');
+  }
+  
+  // Check if this version already exists in changelog
+  if (changelogContent.includes(`## [${version}]`)) {
+    console.log(`Version ${version} already exists in CHANGELOG, updating...`);
+    // For now, just update the date
+    const newContent = changelogContent.replace(
+      `## [${version}] - \d{4}-\d{2}-\d{2}`,
+      `## [${version}] - ${today}`
+    );
+    writeFileSync(changelogPath, newContent);
+    return;
+  }
+  
+  // Add new version at the top
+  const newEntry = `## [${version}] - ${today}\n\n### Added\n\n- Initial release\n\n`;
+  
+  if (changelogContent.includes('## [')) {
+    // Insert before first existing version
+    changelogContent = changelogContent.replace(
+      /^(## \[[^\]]+\])/,
+      newEntry + '$1'
+    );
+  } else {
+    // Create new changelog
+    changelogContent = `# Change Log\n\nAll notable changes to this project will be documented in this file.\n\n` + newEntry + changelogContent;
+  }
+  
+  writeFileSync(changelogPath, changelogContent);
+  console.log(`Updated CHANGELOG.md for version ${version}`);
+}
+
+/**
+ * Creates a commit message for the version bump
+ */
+function createCommitMessage(currentVersion, newVersion, bumpType) {
+  const compatibility = bumpType === 'major' ? 'BREAKING CHANGE' : 'feat';
+  return `chore(release): prepare ${newVersion}\n\nBumps version from ${currentVersion} to ${newVersion} (${bumpType} bump).\n\n- Updated .release.env\n- Updated CHANGELOG.md\n\nGenerated by: npm run release:prepare -- --bump ${bumpType}`;
+}
+
+/**
+ * Main function
+ */
+function main() {
+  try {
+    const args = process.argv.slice(2);
+    const bumpArg = args.find(arg => arg.startsWith('--bump='));
+    
+    if (!bumpArg) {
+      console.error('Usage: node scripts/prepare-release.mjs --bump major|minor');
+      process.exit(2);
+    }
+    
+    const bumpType = bumpArg.split('=')[1];
+    if (bumpType !== 'major' && bumpType !== 'minor') {
+      console.error(`GA_POLICY_INVALID: Unknown bump type: ${bumpType}. Use 'major' or 'minor'`);
+      process.exit(2);
+    }
+    
+    // Read current version
+    const currentVersion = readCurrentVersion();
+    console.log(`Current version: ${currentVersion}`);
+    
+    // Get latest stable version for comparison
+    const latestStable = getLatestStableVersion();
+    console.log(`Latest stable version: ${latestStable}`);
+    
+    // Calculate new version
+    const newVersion = bumpVersion(currentVersion, bumpType);
+    console.log(`New version: ${newVersion}`);
+    
+    // Validate ComVer rules
+    // We're bumping from the latest completed stable release
+    if (latestStable !== '0.0.0') {
+      // Compare with latest stable, not current development version
+      const latestMajor = parseInt(latestStable.split('.')[0], 10);
+      const latestMinor = parseInt(latestStable.split('.')[1], 10);
+      const newMajor = parseInt(newVersion.split('.')[0], 10);
+      const newMinor = parseInt(newVersion.split('.')[1], 10);
+      
+      if (bumpType === 'major') {
+        if (newMajor !== latestMajor + 1) {
+          console.error(`GA_POLICY_INVALID: Major bump from ${latestStable} should be ${latestMajor + 1}.0.0, got ${newVersion}`);
+          process.exit(2);
+        }
+      } else if (bumpType === 'minor') {
+        if (newMajor !== latestMajor || newMinor !== latestMinor + 1) {
+          console.error(`GA_POLICY_INVALID: Minor bump from ${latestStable} should be ${latestMajor}.${latestMinor + 1}.0, got ${newVersion}`);
+          process.exit(2);
+        }
+      }
+    } else {
+      // First release
+      if (newVersion !== '1.0.0') {
+        console.error(`GA_POLICY_INVALID: First release should be 1.0.0, got ${newVersion}`);
+        process.exit(2);
+      }
+    }
+    
+    // Update .release.env
+    updateReleaseEnv(newVersion);
+    
+    // Update CHANGELOG
+    updateChangelog(newVersion);
+    
+    // Create commit message
+    const commitMessage = createCommitMessage(currentVersion, newVersion, bumpType);
+    console.log(`\nCommit message:\n${commitMessage}`);
+    
+    console.log(`\n✅ Release preparation complete`);
+    console.log(`📝 Changes made:`);
+    console.log(`   - .release.env: VERSION=${newVersion}`);
+    console.log(`   - CHANGELOG.md: Added entry for ${newVersion}`);
+    console.log(`\n🚀 Next steps:`);
+    console.log(`   git add .release.env CHANGELOG.md`);
+    console.log(`   git commit -F <(echo '${commitMessage.replace(/'/g, "'\\''")}')`);
+    console.log(`   git push`);
+    console.log(`   # Then run: npm run release:resolve -- --channel ${bumpType === 'major' ? 'stable' : 'prerelease'}`);
+    
+  } catch (error) {
+    console.error(`GA_GIT_ERROR: ${error.message}`);
+    process.exit(2);
+  }
+}
+
+main();
