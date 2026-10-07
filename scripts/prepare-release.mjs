@@ -208,9 +208,10 @@ function main() {
         }
       }
     } else {
-      // First release
-      if (newVersion !== '1.0.0') {
-        console.error(`GA_POLICY_INVALID: First release should be 1.0.0, got ${newVersion}`);
+      // No previous stable releases - this is the first release
+      // For first release, current development version should be 1.0.0
+      if (currentVersion !== '1.0.0' && newVersion !== '1.0.0') {
+        console.error(`GA_POLICY_INVALID: First release should be from/bump to 1.0.0, current=${currentVersion}, new=${newVersion}`);
         process.exit(2);
       }
     }
