@@ -9,17 +9,11 @@ cd "$REPO_ROOT"
 
 echo "Running ShellCheck..."
 
-# Files to lint with ShellCheck
-SHELL_FILES=(
-  "hooks/gitauthors.sh"
-  "install.sh"
-  "uninstall.sh"
-)
+SHELL_FILES="hooks/gitauthors.sh install.sh uninstall.sh"
 
-for file in "${SHELL_FILES[@]}"; do
+for file in $SHELL_FILES; do
   if [ -f "$file" ]; then
     if command -v shellcheck >/dev/null 2>&1; then
-      # Only fail on errors, not warnings
       shellcheck -S error "$file" || {
         echo "ShellCheck failed for $file"
         exit 1
@@ -31,8 +25,4 @@ for file in "${SHELL_FILES[@]}"; do
 done
 
 echo "ShellCheck completed"
-
-# Additional linting could be added here
-# For now, we'll keep it simple
-
 echo "Linting completed successfully"
