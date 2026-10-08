@@ -4,7 +4,7 @@ This document covers all installation methods for gitauthors.
 
 ## Quick Start
 
-The simplest way to get started:
+### Native (No Node Required)
 
 ```bash
 # Create your policy
@@ -14,6 +14,13 @@ git commit -m "chore: Add gitauthors policy"
 
 # Install the hook
 curl -fsSL https://github.com/zimme/gitauthors/releases/latest/download/install.sh | sh
+```
+
+### npm (Convenience Wrapper)
+
+```bash
+# Quick install via npx (works with or without Husky)
+npx @zimme/gitauthors
 ```
 
 ## Installation Methods
