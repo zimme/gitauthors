@@ -15,7 +15,7 @@ trap "rm -rf \"$TEST_DIR\"" EXIT
 
 # Test 1: Native installation and basic functionality
 test_native_installation() {
-  local test_repo="$TEST_DIR/test_native"
+  test_repo="$TEST_DIR/test_native"
   mkdir -p "$test_repo"
   cd "$test_repo"
   
@@ -57,7 +57,7 @@ test_native_installation() {
 
 # Test 2: Policy validation
 test_policy_validation() {
-  local test_repo="$TEST_DIR/test_policy"
+  test_repo="$TEST_DIR/test_policy"
   mkdir -p "$test_repo"
   cd "$test_repo"
   
@@ -95,7 +95,7 @@ test_policy_validation() {
 
 # Test 3: Onboarding workflow
 test_onboarding() {
-  local test_repo="$TEST_DIR/test_onboarding"
+  test_repo="$TEST_DIR/test_onboarding"
   mkdir -p "$test_repo"
   cd "$test_repo"
   
@@ -144,7 +144,7 @@ test_onboarding() {
 
 # Test 4: Range validation
 test_range_validation() {
-  local test_repo="$TEST_DIR/test_range"
+  test_repo="$TEST_DIR/test_range"
   mkdir -p "$test_repo"
   cd "$test_repo"
   
@@ -222,14 +222,14 @@ main() {
   test_error_handling
   echo ""
   
-  # test_native_installation
-  # echo ""
-  # 
-  # test_onboarding
-  # echo ""
-  # 
-  # test_range_validation
-  # echo ""
+  test_native_installation
+  echo ""
+  
+  test_onboarding
+  echo ""
+  
+  test_range_validation
+  echo ""
 
   
   echo "🎉 All integration tests passed!"

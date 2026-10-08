@@ -77,10 +77,11 @@ contains_bom() {
 
 # Validate and parse policy file content
 parse_policy() {
-  local policy_file="$1"
-  local line_num=0
-  local has_effective_lines=false
-  local line trimmed_line
+  policy_file="$1"
+  line_num=0
+  has_effective_lines=false
+  line=""
+  trimmed_line=""
 
   if [ ! -f "$policy_file" ] || [ ! -r "$policy_file" ]; then
     ga_policy_missing "Policy file not found or not readable"
@@ -138,10 +139,10 @@ parse_policy() {
     esac
     
     if echo "$trimmed_line" | grep -q '@'; then
-      local_part=$(printf '%s\n' "$trimmed_line" | sed 's/@.*//')
+      local_part_val=$(printf '%s\n' "$trimmed_line" | sed 's/@.*//')
       domain_part=$(printf '%s\n' "$trimmed_line" | sed 's/^[^@]*@//')
       
-      if ! validate_local_part "$local_part"; then
+      if ! validate_local_part "$local_part_val"; then
         ga_policy_invalid "Invalid local part at line $line_num: $trimmed_line"
         return 2
       fi
@@ -166,15 +167,15 @@ parse_policy() {
 }
 
 validate_local_part() {
-  local local="$1"
-  if [ -z "$local" ]; then return 1; fi
-  if [ ${#local} -gt 254 ]; then return 1; fi
-  if echo "$local" | grep -qE '[^a-zA-Z0-9_\.\+\-\[\]]'; then return 1; fi
+  local_val="$1"
+  if [ -z "$local_val" ]; then return 1; fi
+  if [ ${#local_val} -gt 254 ]; then return 1; fi
+  if echo "$local_val" | grep -qE '[^a-zA-Z0-9_\.\+\-\[\]]'; then return 1; fi
   return 0
 }
 
 validate_domain() {
-  local domain="$1"
+  domain="$1"
   if [ -z "$domain" ]; then return 1; fi
   if [ ${#domain} -gt 253 ]; then return 1; fi
   
@@ -205,7 +206,11 @@ validate_domain() {
 }
 
 check_email_against_policy() {
-  local email="$1" policy_file="$2" line trimmed_line entry
+  email="$1"
+  policy_file="$2"
+  line=""
+  trimmed_line=""
+  entry=""
   
   while IFS= read -r line || [ -n "$line" ]; do
     line=$(printf '%s\n' "$line" | tr -d '\r')
@@ -235,7 +240,9 @@ check_email_against_policy() {
 }
 
 get_staged_policy_content() {
-  local toplevel="$1" policy_content temp_file
+  toplevel="$1"
+  policy_content=""
+  temp_file=""
   cd "$toplevel"
   
   if ! git cat-file blob ':.gitauthors' >/dev/null 2>&1; then
@@ -261,7 +268,9 @@ get_staged_policy_content() {
 }
 
 get_head_policy_content() {
-  local toplevel="$1" policy_content temp_file
+  toplevel="$1"
+  policy_content=""
+  temp_file=""
   cd "$toplevel"
   
   if git rev-parse --verify HEAD >/dev/null 2>&1; then
@@ -289,7 +298,8 @@ extract_email_from_ident() {
 }
 
 validate_and_extract_email() {
-  local ident="$1" email
+  ident="$1"
+  email=""
   
   case "$ident" in *'<'*'>'*) ;; *) ga_git_error "Invalid git ident: $ident"; return 2 ;; esac
   
@@ -303,11 +313,19 @@ validate_and_extract_email() {
 }
 
 validate_pending_commit() {
-  local toplevel="$1" author_ident committer_ident
-  local author_email committer_email staged_policy_file head_policy_file
-  local author_approved_by_head=false committer_approved_by_head=false
-  local author_approved_by_staged=false committer_approved_by_staged=false
-  local author_needs_onboarding=false committer_needs_onboarding=false
+  toplevel="$1"
+  author_ident=""
+  committer_ident=""
+  author_email=""
+  committer_email=""
+  staged_policy_file=""
+  head_policy_file=""
+  author_approved_by_head=false
+  committer_approved_by_head=false
+  author_approved_by_staged=false
+  committer_approved_by_staged=false
+  author_needs_onboarding=false
+  committer_needs_onboarding=false
 
   cd "$toplevel"
   
@@ -353,15 +371,23 @@ validate_pending_commit() {
 }
 
 validate_policy_mode() {
-  local policy_file="$1"
+  policy_file="$1"
   [ ! -f "$policy_file" ] && { ga_policy_missing "Policy file not found: $policy_file"; exit 2; }
   parse_policy "$policy_file" && { printf 'Policy is valid\n' >&2; exit 0; } || exit 2
 }
 
 range_mode() {
-  local base_ref="$1" head_ref="$2" toplevel resolved_base resolved_head
-  local current_commit first_parent_commit author_email committer_email
-  local commit_policy_file first_parent_policy_file
+  base_ref="$1"
+  head_ref="$2"
+  toplevel=""
+  resolved_base=""
+  resolved_head=""
+  current_commit=""
+  first_parent_commit=""
+  author_email=""
+  committer_email=""
+  commit_policy_file=""
+  first_parent_policy_file=""
 
   toplevel=$(resolve_git_toplevel) || exit 2
   cd "$toplevel"
@@ -398,7 +424,9 @@ range_mode() {
 }
 
 get_commit_policy() {
-  local commit="$1" policy_content temp_file
+  commit="$1"
+  policy_content=""
+  temp_file=""
   
   if git cat-file blob "${commit}:.gitauthors" >/dev/null 2>&1; then
     policy_content=$(git cat-file blob "${commit}:.gitauthors" 2>/dev/null) || { ga_git_error "Failed to read .gitauthors from $commit"; return 2; }
@@ -413,7 +441,9 @@ get_commit_policy() {
 }
 
 check_commit_identity() {
-  local email="$1" commit_policy_file="$2" parent_policy_file="$3"
+  email="$1"
+  commit_policy_file="$2"
+  parent_policy_file="$3"
   
   [ -n "$commit_policy_file" ] && [ -f "$commit_policy_file" ] && [ -s "$commit_policy_file" ] && check_email_against_policy "$email" "$commit_policy_file" && return 0
   [ -n "$parent_policy_file" ] && [ -f "$parent_policy_file" ] && [ -s "$parent_policy_file" ] && check_email_against_policy "$email" "$parent_policy_file" && return 0

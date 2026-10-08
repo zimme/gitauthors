@@ -79,10 +79,10 @@ trap cleanup_lock EXIT
 
 # Download file with retry
 download_file() {
-  local url="$1"
-  local dest="$2"
-  local max_retries=3
-  local retry=0
+  url="$1"
+  dest="$2"
+  max_retries=3
+  retry=0
   
   while [ $retry -lt $max_retries ]; do
     if command -v curl >/dev/null 2>&1; then
@@ -103,8 +103,8 @@ download_file() {
 
 # Verify SHA256 checksum
 verify_checksum() {
-  local file="$1"
-  local expected="$2"
+  file="$1"
+  expected="$2"
   
   if command -v sha256sum >/dev/null 2>&1; then
     actual=$(sha256sum "$file" | cut -d' ' -f1)

@@ -58,9 +58,9 @@ check_gitauthors_installed() {
 
 # Check if hook has been edited
 check_hook_edited() {
-  local metadir="$1"
-  local pre_commit_hook="$GIT_HOOKS_DIR/pre-commit"
-  local installed_hook="$metadir/installed-pre-commit"
+  metadir="$1"
+  pre_commit_hook="$GIT_HOOKS_DIR/pre-commit"
+  installed_hook="$metadir/installed-pre-commit"
   
   # Check if hook exists and is a symlink
   if [ ! -L "$pre_commit_hook" ]; then

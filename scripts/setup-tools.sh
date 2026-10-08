@@ -22,9 +22,9 @@ esac
 
 # Function to download and install a tool
 download_tool() {
-  local name="$1"
-  local url="$2"
-  local dest="$TOOLS_DIR/$name"
+  name="$1"
+  url="$2"
+  dest="$TOOLS_DIR/$name"
   
   echo "Installing $name..."
   if command -v curl >/dev/null 2>&1; then
