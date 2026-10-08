@@ -189,9 +189,11 @@ sh install.sh --from-source
 ### Hook Not Running
 
 **Check**:
-- The hook file exists: `ls -la .git/hooks/pre-commit`
-- The hook is executable: `test -x .git/hooks/pre-commit`
-- Git hooks are enabled: `git config core.hooksPath` (should be empty)
+- The hook file exists in the correct location:
+  - If `core.hooksPath` is set: `ls -la $(git config core.hooksPath)/pre-commit`
+  - Otherwise: `ls -la .git/hooks/pre-commit`
+- The hook is executable: `test -x $(git rev-parse --git-path hooks)/pre-commit`
+- Git hooks are configured: `git config core.hooksPath`
 
 ### GA_IDENTITY_DENIED Errors
 
@@ -256,19 +258,27 @@ gitauthors works with Git worktrees. The installation:
 
 ## Custom Hook Path
 
-If you have `core.hooksPath` configured, gitauthors cannot automatically install:
+gitauthors now automatically respects `core.hooksPath` configuration:
+
+- If `core.hooksPath` is set, the hook is installed to that directory
+- If not set, the hook is installed to `.git/hooks/` (default)
+
+This is especially useful for:
+- Committing hooks to the repository
+- Using custom hook directories
+- Working with tools that manage hooks in specific locations
 
 ```bash
-# Check current setting
-git config --get core.hooksPath
+# Set a custom hooks directory
+git config core.hooksPath .githooks
 
-# Temporarily disable for installation
-git config --unset core.hooksPath
+# Install normally - hook goes to .githooks/pre-commit
+npx @zimme/gitauthors
+# or
 sh install.sh --from-source
-git config core.hooksPath your-custom-path
 
-# Manual integration required
-cp hooks/gitauthors.sh your-custom-path/gitauthors.sh
+# Verify
+ls -la .githooks/pre-commit
 ```
 
 ## Configuration

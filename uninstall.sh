@@ -13,6 +13,16 @@ ga_git_error() {
 GITHUB_OWNER="zimme"
 GITHUB_REPO="gitauthors"
 
+# Get hooks path (either custom or default)
+get_hooks_path() {
+  HOOKS_PATH=$(git config --get core.hooksPath 2>/dev/null) || true
+  if [ -n "$HOOKS_PATH" ]; then
+    echo "$HOOKS_PATH"
+  else
+    git rev-parse --path-format=absolute --git-path hooks 2>/dev/null
+  fi
+}
+
 # Ensure we're running in a Git repository
 resolve_git_metadata() {
   GIT_TOPEVEL=$(git rev-parse --path-format=absolute --show-toplevel 2>/dev/null) || {
@@ -25,7 +35,7 @@ resolve_git_metadata() {
     exit 2
   }
   
-  GIT_HOOKS_DIR=$(git rev-parse --path-format=absolute --git-path hooks 2>/dev/null) || {
+  GIT_HOOKS_DIR=$(get_hooks_path) || {
     printf 'GA_GIT_ERROR: Failed to get git hooks directory\n' >&2
     exit 2
   }

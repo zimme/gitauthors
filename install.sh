@@ -36,7 +36,7 @@ resolve_git_metadata() {
     exit 2
   }
   
-  GIT_HOOKS_DIR=$(git rev-parse --path-format=absolute --git-path hooks 2>/dev/null) || {
+  GIT_HOOKS_DIR=$(get_hooks_path) || {
     printf 'GA_GIT_ERROR: Failed to get git hooks directory\n' >&2
     exit 2
   }
@@ -57,12 +57,15 @@ check_bare_repo() {
   fi
 }
 
-# Check for core.hooksPath configuration
-check_hooks_path() {
+# Get hooks path (either custom or default)
+get_hooks_path() {
   HOOKS_PATH=$(git config --get core.hooksPath 2>/dev/null) || true
   if [ -n "$HOOKS_PATH" ]; then
-    ga_git_error "core.hooksPath is configured ($HOOKS_PATH). Use Husky/manual integration instead."
-    exit 2
+    # Use custom hooks path if configured
+    echo "$HOOKS_PATH"
+  else
+    # Use default hooks path
+    git rev-parse --path-format=absolute --git-path hooks 2>/dev/null
   fi
 }
 
@@ -171,18 +174,16 @@ main() {
     exit 2
   }
   
-  GIT_HOOKS_DIR=$(git rev-parse --path-format=absolute --git-path hooks 2>/dev/null) || {
+  cd "$GIT_TOPEVEL"
+  
+  # Get hooks path (respects core.hooksPath if configured)
+  GIT_HOOKS_DIR=$(get_hooks_path) || {
     printf 'GA_GIT_ERROR: Failed to get git hooks directory\n' >&2
     exit 2
   }
   
-  cd "$GIT_TOPEVEL"
-  
   # Check for bare repository
   check_bare_repo
-  
-  # Check for core.hooksPath
-  check_hooks_path
   
   # Get version
   VERSION=$(get_latest_version) || exit 2
