@@ -3,10 +3,11 @@
 // Validates that npm and JSR package structures are correct
 
 import { readFileSync, existsSync } from 'fs';
-import { resolve } from 'path';
+import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
-const __dirname = fileURLToPath(import.meta.url);
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 const repoRoot = resolve(__dirname, '..');
 
 function main() {
