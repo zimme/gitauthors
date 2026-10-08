@@ -32,7 +32,7 @@ temp/
 *.tmp
 
 # Generated files
-package-lock.json
+# package-lock.json is committed for reproducible builds
 
 # Husky
 .husky/*
