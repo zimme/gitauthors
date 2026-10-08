@@ -28,6 +28,13 @@
 
 ### npm Package
 
+**Option A: Automatic setup (recommended)**
+```bash
+npx @zimme/gitauthors
+```
+This automatically installs the hook (works with or without Husky).
+
+**Option B: Manual setup**
 1. Install as dev dependency:
    ```bash
    npm install --save-dev @zimme/gitauthors
