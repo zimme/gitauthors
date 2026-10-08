@@ -62,23 +62,30 @@ check_hook_edited() {
   pre_commit_hook="$GIT_HOOKS_DIR/pre-commit"
   installed_hook="$metadir/installed-pre-commit"
   
-  # Check if hook exists and is a symlink
-  if [ ! -L "$pre_commit_hook" ]; then
-    ga_git_error "pre-commit hook is not a symlink"
+  # Check if hook exists
+  if [ ! -e "$pre_commit_hook" ]; then
+    ga_git_error "pre-commit hook does not exist"
     exit 2
   fi
   
-  # Check if it points to our wrapper
-  HOOK_TARGET=$(readlink "$pre_commit_hook")
-  if [ "$HOOK_TARGET" != "$installed_hook" ]; then
-    ga_git_error "pre-commit hook points to unexpected target: $HOOK_TARGET"
-    exit 2
-  fi
-  
-  # Check if the wrapper has been modified
-  if ! diff -q "$installed_hook" "$pre_commit_hook" >/dev/null 2>&1; then
-    ga_git_error "pre-commit hook wrapper has been modified"
-    exit 2
+  # If it's a symlink, check it points to our wrapper
+  if [ -L "$pre_commit_hook" ]; then
+    HOOK_TARGET=$(readlink "$pre_commit_hook")
+    if [ "$HOOK_TARGET" != "$installed_hook" ]; then
+      ga_git_error "pre-commit hook points to unexpected target: $HOOK_TARGET"
+      exit 2
+    fi
+    # Check if the wrapper has been modified (diff follows symlink)
+    if ! diff -q "$installed_hook" "$pre_commit_hook" >/dev/null 2>&1; then
+      ga_git_error "pre-commit hook wrapper has been modified"
+      exit 2
+    fi
+  else
+    # Regular file - check if it matches our installed hook
+    if ! diff -q "$installed_hook" "$pre_commit_hook" >/dev/null 2>&1; then
+      ga_git_error "pre-commit hook has been modified"
+      exit 2
+    fi
   fi
 }
 
