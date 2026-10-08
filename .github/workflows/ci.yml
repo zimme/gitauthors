@@ -42,7 +42,7 @@ jobs:
           cache: 'npm'
       
       - name: Install dependencies
-        run: npm ci
+        run: npm install --ignore-scripts
       
       - name: Set up tools
         run: npm run tools:setup
@@ -74,7 +74,7 @@ jobs:
           deno-version: 2.9.7
       
       - name: Install dependencies
-        run: npm ci
+        run: npm install --ignore-scripts
       
       - name: Build
         run: npm run build
