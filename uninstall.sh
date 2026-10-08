@@ -34,12 +34,13 @@ resolve_git_metadata() {
 }
 
 # Check if gitauthors is installed
+# Returns metadir path on stdout if installed, exits 2 if not
 check_gitauthors_installed() {
   GITAUTHORS_METADIR="${GIT_COMMON_DIR}/gitauthors"
   
   if [ ! -d "$GITAUTHORS_METADIR" ]; then
-    printf 'gitauthors is not installed\n' >&2
-    exit 0
+    ga_git_error "gitauthors is not installed"
+    exit 2
   fi
   
   if [ ! -f "$GITAUTHORS_METADIR/ownership" ]; then

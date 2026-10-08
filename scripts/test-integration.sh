@@ -221,15 +221,6 @@ main() {
   
   test_error_handling
   echo ""
-  
-  # test_native_installation
-  # echo ""
-  # 
-  # test_onboarding
-  # echo ""
-  # 
-  # test_range_validation
-  # echo ""
 
   
   echo "🎉 All integration tests passed!"
