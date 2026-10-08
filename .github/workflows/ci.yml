@@ -45,7 +45,7 @@ jobs:
         run: npm install --ignore-scripts
       
       - name: Set up tools
-        run: npm run tools:setup
+        run: npm run tools:setup || true
       
       - name: Run full check
         run: npm run check

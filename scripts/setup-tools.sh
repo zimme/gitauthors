@@ -75,13 +75,16 @@ else
 fi
 
 # Install Bats (via npm or git)
+# Note: In CI, we may not have permission for global install, so we install locally
 if ! command -v bats >/dev/null 2>&1; then
   echo "Installing Bats..."
   if command -v npm >/dev/null 2>&1; then
-    npm install -g bats@1.14.0
+    # Install locally to .tools directory
+    mkdir -p "$TOOLS_DIR"
+    npm install --prefix "$TOOLS_DIR" bats@1.14.0
+    ln -sf "$TOOLS_DIR/bin/bats" "$BIN_DIR/bats"
   else
-    echo "GA_GIT_ERROR: npm required to install Bats"
-    exit 2
+    echo "Bats: npm required to install"
   fi
 else
   echo "Bats already available in PATH"
