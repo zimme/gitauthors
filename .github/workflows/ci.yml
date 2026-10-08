@@ -81,7 +81,7 @@ jobs:
       
       - name: Deno smoke test
         run: |
-          deno run -A dist/jsr/cli.mjs --validate-policy .gitauthors
+          deno run -A dist/jsr/src/cli.mjs --validate-policy .gitauthors
       
       - name: Deno publish dry-run
         run: |
