@@ -6,7 +6,7 @@
 
 ## Quick Start
 
-### Native Git Hook (No Node/npm required)
+### Native Git Hook
 
 1. Create `.gitauthors` in your repository:
    ```text
