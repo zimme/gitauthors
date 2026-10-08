@@ -188,10 +188,8 @@ function generatePackageJson(version) {
     "url": "https://github.com/zimme/gitauthors/issues"
   },
   "homepage": "https://github.com/zimme/gitauthors",
-  "packageManager": "npm@11.19.0",
   "engines": {
-    "node": ">=24",
-    "npm": ">=11.19.0"
+    "node": ">=20"
   },
   "dependencies": {},
   "files": [
