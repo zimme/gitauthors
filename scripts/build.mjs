@@ -192,6 +192,10 @@ function generatePackageJson(version) {
   "bin": {
     "gitauthors": "./src/cli.mjs"
   },
+  "scripts": {
+    "prepare": "node scripts/prepare-hook.cjs"
+  },
+  "allow-scripts": true,
   "keywords": [
     "git",
     "hook",
@@ -217,6 +221,7 @@ function generatePackageJson(version) {
   "files": [
     "hooks",
     "src",
+    "scripts",
     "install.sh",
     "uninstall.sh"
   ]
@@ -350,6 +355,15 @@ function main() {
     cpSync(uninstallShPath, resolve(repoRoot, 'dist', 'npm', 'uninstall.sh'));
     cpSync(uninstallShPath, resolve(repoRoot, 'dist', 'jsr', 'uninstall.sh'));
     console.log('Copied uninstall.sh');
+  }
+  
+  // Copy prepare-hook.cjs for npm
+  const prepareHookPath = resolve(repoRoot, 'scripts', 'prepare-hook.cjs');
+  if (existsSync(prepareHookPath)) {
+    const npmScriptsDir = resolve(repoRoot, 'dist', 'npm', 'scripts');
+    mkdirSync(npmScriptsDir, { recursive: true });
+    cpSync(prepareHookPath, resolve(npmScriptsDir, 'prepare-hook.cjs'));
+    console.log('Copied prepare-hook.cjs');
   }
   
   console.log('Build completed successfully');
