@@ -103,13 +103,13 @@ function generateESMModule(version, sourceSha = '') {
  * Runs the gitauthors hook with the given arguments
  * @param {string[]} [args=[]] - Arguments to pass to the hook
  * @param {RunHookOptions} [options={}] - Options for running the hook
- * @returns {number} The exit status code (0=success, 1=denied, 2=error)
+ * @returns {Promise<number>} The exit status code (0=success, 1=denied, 2=error)
  */
-export function runHook(args = [], options = {}) {
+export async function runHook(args = [], options = {}) {
   const { cwd = process.cwd() } = options;
   
   try {
-    const { spawnSync } = require('child_process');
+    const { spawnSync } = await import('child_process');
     const result = spawnSync('sh', ['-c', shellSource, 'gitauthors', ...args], {
       cwd,
       stdio: 'inherit'
@@ -148,7 +148,11 @@ import { runHook } from './mod.mjs';
 const args = process.argv.slice(2);
 
 // Run the hook and set the exit code
-process.exitCode = runHook(args, { cwd: process.cwd() });`;
+runHook(args, { cwd: process.cwd() }).then(code => {
+  process.exitCode = code;
+}).catch(() => {
+  process.exitCode = 2;
+});`;
 }
 
 // Generate package.json for npm distribution
