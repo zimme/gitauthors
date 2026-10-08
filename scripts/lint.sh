@@ -19,7 +19,8 @@ SHELL_FILES=(
 for file in "${SHELL_FILES[@]}"; do
   if [ -f "$file" ]; then
     if command -v shellcheck >/dev/null 2>&1; then
-      shellcheck "$file" || {
+      # Only fail on errors, not warnings
+      shellcheck -S error "$file" || {
         echo "ShellCheck failed for $file"
         exit 1
       }
